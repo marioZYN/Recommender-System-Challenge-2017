@@ -5,7 +5,7 @@ import warnings
 warnings.filterwarnings('ignore')
 import numpy as np
 import pandas as pd
-from utility import map_score
+from support import map_score
 
 
 class Dispacher(Recommender):

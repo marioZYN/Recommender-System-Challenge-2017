@@ -30,14 +30,8 @@ class Hybrid(Recommender):
     def recommend(self, user_id, at=5):
 
         user_index = self.playlist_dic[user_id]
-        recommend_result = None
-        for (index, rec) in enumerate(self.rec_systems):
-            if recommend_result == None:
-                recommend_result = rec.playlist_track.getrow(user_index) * self.rec_weights[index]
-            else:
-                recommend_result += rec.playlist_track.getrow(user_index) * self.rec_weights[index]
-
-        recommendingItems = np.asarray(recommend_result.toarray()[0].argsort()[::-1])
+        rec = self.playlist_track.getrow(user_index)
+        recommendingItems = np.asarray(rec.toarray()[0].argsort()[::-1])
         unseen_items_mask = np.in1d(recommendingItems, self.urm[user_index].indices,assume_unique=True, invert=True)
         unseen_items = recommendingItems[unseen_items_mask]
         recommended_items = unseen_items[0:at]

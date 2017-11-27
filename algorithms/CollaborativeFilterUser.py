@@ -1,135 +1,87 @@
 from algorithms.Recommender import Recommender
-from similarity_cython.similarity_cython.CosineSim import Cosine_Similarity
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 import pandas as pd
 import scipy.sparse as sps
-from sklearn.preprocessing import normalize
 
 class CollaborativeFilterUser(Recommender):
 
 
     def __init__(self):
-        super(CollaborativeFilterUser, self).__init__()
+
+        super().__init__()
         self.playlist_playlist = None
         self.playlist_track = None
 
-    def fit(self, artist_weight=0, album_weight=0, owner_weight=0):
-        cos = Cosine_Similarity(self.urm.T.tocsr(), TopK=100)
-        self.playlist_playlist = cos.compute_similarity().tocsr()
-        # self.playlist_playlist = normalize(self.playlist_playlist, norm='l1', axis=1)
-        if artist_weight != 0:
-            self.add_artist(artist_weight)
-        if album_weight != 0:
-            self.add_album(album_weight)
-        if owner_weight != 0:
-            self.add_owner(owner_weight)
-        self.playlist_playlist = normalize(self.playlist_playlist, norm='l1', axis=1)
-        print("-- playlist_track rec generating...")
-        self.playlist_track = self.playlist_playlist * self.urm
-        self.playlist_track = normalize(self.playlist_track, norm='l1', axis=1)
+    def fit(self):
 
-    def add_owner(self, weight):
+        print("-- calculating user-user similarity matrix")
+        playlist_playlist = cosine_similarity(self.urm, dense_output=False)
+        print("-- calculating user-user similarity from titles")
+        playlist_title_matrix = self.generate_playlist_title_matrix(1)
+        playlist_playlist_titles = cosine_similarity(playlist_title_matrix, dense_output=False)
+        print("-- adding cfu and content based")
+        self.playlist_playlist = playlist_playlist - playlist_playlist_titles * 0.4
+        print("-- generating prediction matrix")
+        self.playlist_track = self.playlist_playlist.tocsr() * self.urm.tocsc()
 
-        print('adding owners with weight %f ...' % weight)
-        playlist_final = pd.read_csv("./Data/playlists_final.csv", sep='\t')
-        total_owners = sorted(list(set(playlist_final.owner)))
-        row_number = len(self.playlist_unique)
-        col_number = len(total_owners)
+    def generate_playlist_owner_matrix(self, weight):
 
-        A = sps.lil_matrix((row_number, col_number))
-        count = 0
-        for p in self.playlist_unique:
-            row_index = self.playlist_unique.index(p)
-            owner = playlist_final[playlist_final['playlist_id'] == p].iloc[0]['owner']
-            col_index = total_owners.index(owner)
-            A[row_index, col_index] = 1
-            count += 1
-            print("\r-- %d playlist completes with %d total" % (count, len(self.playlist_unique)), end='')
-        print()
-        cos = Cosine_Similarity(A.T.tocsr(), TopK=100)
-        playlist_playlist = cos.compute_similarity()
-        playlist_playlist = normalize(playlist_playlist, norm='l1', axis=1)
-        self.playlist_playlist += playlist_playlist * weight
+        print("* generating playlist_owner_matrix with weight {:.1f}".format(weight))
+        # reading data and perform prune
+        playlist_final = pd.read_csv("../data/playlists_final.csv",sep='\t')
+        temp = pd.DataFrame({'playlist_id': self.playlist_unique})
+        playlist_owner = pd.merge(temp, playlist_final, on='playlist_id', how='left')[['playlist_id', 'owner']]
+        total_owners = list(set(playlist_owner.owner))
+        owner_dic = dict(zip(total_owners, list(np.arange(0, len(total_owners)))))
+        playlist_owner_dic = dict(zip(list(playlist_owner.playlist_id), list(playlist_owner.owner)))
 
-    def add_owner(self, weight):
 
-        # adding owner does not improve the performance
-        print('adding owners with weight %f ...' % weight)
-        playlist_final = pd.read_csv("./Data/playlists_final.csv", sep='\t')
-        total_owners = sorted(list(set(playlist_final.owner)))
-        row_number = len(self.playlist_unique)
-        col_number = len(total_owners)
+        # generating matrix
+        ratingList = [weight] * len(self.playlist_unique)
+        row_indices = [x for x in range(0, len(self.playlist_unique))]
+        col_indices = [owner_dic[playlist_owner_dic[x]] for x in self.playlist_unique]
+        playlist_owner_matrix = sps.coo_matrix((ratingList, (row_indices, col_indices)))
 
-        A = sps.lil_matrix((row_number, col_number))
-        count = 0
-        for p in self.playlist_unique:
-            row_index = self.playlist_unique.index(p)
-            owner = playlist_final[playlist_final['playlist_id'] == p].iloc[0]['owner']
-            col_index = total_owners.index(owner)
-            A[row_index, col_index] = 1
-            count += 1
-            print("\r-- %d playlist completes with %d total" % (count, len(self.playlist_unique)), end='')
-        print()
+        return playlist_owner_matrix
 
-        cos = Cosine_Similarity(A.T.tocsr(), TopK=500)
-        playlist_playlist = cos.compute_similarity()
-        playlist_playlist = normalize(playlist_playlist, norm='l1', axis=1)
-        self.playlist_playlist += playlist_playlist * weight
+    def generate_playlist_title_matrix(self, weight):
 
-    def add_titles(self, weight):
+        print("* generating playlist_title_matrix with weight {:.1f}".format(weight))
 
-        print("adding titles with weight %f ..." % weight)
-        playlists_final = pd.read_csv("./Data/playlists_final.csv", sep='\t')
-        t1 = playlists_final[['playlist_id', 'title']]
-        t1['title'] = t1['title'].str.replace(r'(\[|\])', '')
+        # preparing data
+        playlist_final = pd.read_csv("../data/playlists_final.csv", sep='\t')
+        temp = pd.DataFrame({'playlist_id': self.playlist_unique})
+        playlist_title_df = pd.merge(temp, playlist_final[['playlist_id', 'title']], on='playlist_id')
 
-        legal_titles = set()
-        count = 0
-        print("-- calculating total titles...")
-        for i in range(0, t1.shape[0]):
-            count += 1
-            print('\r-- %d playlist completes with total %d' % (count, t1.shape[0]), end='')
-            temp = t1.iloc[i].title.replace(' ', '').split(',')
-            if not temp[0]:
-                continue
-            current_titles = set(map(int, temp))
-            legal_titles = legal_titles | current_titles
-        print()
+        # calculate index map
+        titles = list(set(playlist_title_df.title))
+        titles = [x[1:-1].split(', ') for x in titles]
+        titles = [item for sublist in titles for item in sublist]
+        title_index_dic = dict(zip(titles, list(np.arange(0, len(titles)))))
+        playlist_index_dic = dict(zip(self.playlist_unique, list(np.arange(0, len(self.playlist_unique)))))
 
-        total_titles = sorted(list(legal_titles))
+        # unwrap titles
+        titles = list(playlist_title_df.title)
+        title_count_list = list(map(lambda x: len(x[1:-1].split(', ')), titles))
+        title_name_list = list(map(lambda x: x[1:-1].split(', '), titles))
+        title_name_list = [item for sublist in title_name_list for item in sublist] # final use
+        playlist_ids = list(playlist_title_df.playlist_id)
+        playlist_id_list = np.repeat(playlist_ids, title_count_list) # final use
 
-        row_number = len(self.playlist_unique)
-        col_number = len(total_titles)
-        A = sps.lil_matrix((row_number, col_number))
 
-        print("-- forming matrix...")
-        count = 0
-        for t in self.playlist_unique:
-            row_index = self.playlist_unique.index(t)
-            titles = t1[t1['playlist_id'] == t].iloc[0]['title']
-            titles = titles.replace(' ', '').split(',')
-            if not titles[0]:
-                count += 1
-                print("\r-- %d playlist completes with %d total" % (count, len(self.playlist_unique)), end='')
-                continue
-            titles = list(map(int, titles))
-            for title in titles:
-                col_index = total_titles.index(title)
-                A[row_index, col_index] = 1
-            count += 1
-            print("\r-- %d playlist completes with %d total" % (count, len(self.playlist_unique)), end='')
-        print()
+        # generate matrix
+        ratinglist = [0 if x =='' else weight for x in title_name_list]
+        row_indices = [playlist_index_dic[x] for x in playlist_id_list]
+        col_indices = [title_index_dic[x] for x in title_name_list]
+        playlist_title_matrix = sps.coo_matrix((ratinglist, (row_indices, col_indices)))
+        playlist_title_matrix.eliminate_zeros()
 
-        cos = Cosine_Similarity(A.T.tocsr(), TopK=500)
-        playlist_playlist = cos.compute_similarity()
-        playlist_playlist = normalize(playlist_playlist, norm='l1', axis=1)
-        self.playlist_playlist += playlist_playlist * weight
-
+        return playlist_title_matrix
 
     def add_artist(self, weight):
 
-        tracks_final = pd.read_csv("./Data/tracks_final.csv", sep='\t')
+        tracks_final = pd.read_csv("./data/tracks_final.csv", sep='\t')
         temp = pd.DataFrame({'track_id': self.tracks_unique})
         track_artists = pd.merge(temp, tracks_final, on='track_id', how='left')[['track_id', 'artist_id']]
         ratingList = [1] * len(self.tracks_unique)
@@ -146,7 +98,7 @@ class CollaborativeFilterUser(Recommender):
     def add_album(self, weight):
 
         print("adding album with weight %f ..." % weight)
-        tracks_final = pd.read_csv("./Data/tracks_final.csv", sep='\t')
+        tracks_final = pd.read_csv("./data/tracks_final.csv", sep='\t')
         total_albums = sorted(list(set(tracks_final.album)))
         total_albums.remove('[]')
         # total_albums.remove('[None]')
@@ -178,10 +130,31 @@ class CollaborativeFilterUser(Recommender):
     def recommend(self, user_id, at=5):
 
         user_index = self.playlist_dic[user_id]
-        user = self.playlist_playlist.getrow(user_index)
-        rec = np.dot(user, self.urm)
+        rec = self.playlist_track.getrow(user_index)
         recommendingItems = np.asarray(rec.toarray()[0].argsort()[::-1])
-        unseen_items_mask = np.in1d(recommendingItems, self.urm[user_index].indices,assume_unique=True, invert=True)
+        unseen_items_mask = np.in1d(recommendingItems, self.urm[user_index].indices, assume_unique=True, invert=True)
         unseen_items = recommendingItems[unseen_items_mask]
         recommended_items = unseen_items[0:at]
         return recommended_items
+
+
+if __name__ == '__main__':
+
+    from support.utility import read_data
+    from support.utility import train_test_split
+    import time
+
+    start = time.time()
+    print("reading data")
+    data = read_data(sample_frac=0.9)
+    print("train, test splitting")
+    (train, test) = train_test_split(data, 5)
+
+    print("training cfu")
+    cfi = CollaborativeFilterUser()
+    cfi.setup(train)
+    cfi.fit()
+    print("evaluating")
+    cfi.evaluate_result(train, test)
+
+    print("total time is {:.2f} minutes".format((time.time() - start) / 60))

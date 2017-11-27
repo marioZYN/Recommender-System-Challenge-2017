@@ -1,6 +1,6 @@
 from algorithms.Recommender import Recommender
-from similarity_cython.similarity_cython.CosineSim import Cosine_Similarity
 from sklearn.metrics.pairwise import cosine_similarity
+from similarity_cython.similarity_cython.CosineSim import Cosine_Similarity
 from sklearn.preprocessing import normalize
 import numpy as np
 import pandas as pd
@@ -15,133 +15,80 @@ class CollaborativeFilterItem(Recommender):
         self.track_track = None
         self.playlist_track = None
 
-    def fit(self, artist_weight=0, album_weight=0,tag_weight=0, combine_weight=0,artist=0, album=0, topk=100):
+    def fit(self):
 
+        print("-- generating profile")
+        track_artist_matrix = self.generate_track_artist_matrix(1)
+        track_album_matrix = self.generate_track_album_matrix(1)
+        track_attribute_matrix = sps.hstack([track_artist_matrix.tocoo(), track_album_matrix.tocoo()])
+        print("-- caluclating item-item simislarity matrix")
+        self.track_track = cosine_similarity(self.urm.T.tocsr(), dense_output=False)
+        self.track_track += cosine_similarity(track_attribute_matrix.tocsr(), dense_output=False)
 
-        print("-- cosing cfi with topK=%d..."%topk)
-        # track_track = cosine_similarity(self.urm.T.tocsr(), dense_output=False)
-        # self.track_track = self.pruneTopK(track_track, topK=topk).T.tocsr()
-        # self.add_tags(1)
-        # temp = sps.vstack([self.urm.tocoo(), self.tags.T.tocoo()])
-        cos = Cosine_Similarity(self.urm.tocsr(), TopK=topk)
-        self.track_track = cos.compute_similarity()
-        self.track_track = normalize(self.track_track, norm='l1', axis=1)
-        if artist_weight != 0:
-            print("-- adding artist with weight %f"%artist_weight)
-            self.add_artist(artist_weight)
-        if album_weight != 0:
-            print("-- adding album with weight %f"%album_weight)
-            self.add_album(album_weight)
-        if combine_weight !=0:
-            print("-- vstacking artist %f album %f combine %f"%(artist, album, combine_weight))
-            self.vstack(artist_weight=artist, album_weight=album, combine_weight=combine_weight, topk=topk)
-        if tag_weight != 0:
-            self.add_tags(tag_weight)
-        print("-- playlist_track rec generating...")
-        self.playlist_track = self.urm * self.track_track
-        self.playlist_track = normalize(self.playlist_track, norm='l1', axis=1)
+    def generate_track_artist_matrix(self, weight):
 
-    def add_artist(self, weight):
+        print("* generating track_artist_matrix with weight {:.1f}".format(weight))
 
-        tracks_final = pd.read_csv("./Data/tracks_final.csv", sep='\t')
+        # reading data and perform prune
+        tracks_final = pd.read_csv("../data/tracks_final.csv", sep='\t')
         temp = pd.DataFrame({'track_id': self.tracks_unique})
+        track_artist_df = pd.merge(temp, tracks_final[['track_id', 'artist_id']], on='track_id')
+        artists = list(set(track_artist_df.artist_id))
+        track_id_artist_id_dic = dict(zip(list(track_artist_df.track_id), list(track_artist_df.artist_id)))
+        artist_id_index_dic = dict(zip(artists, list(np.arange(0, len(artists)))))
 
-        total_artists = list(set(tracks_final.artist_id))
-        artist_dic = dict(zip(total_artists, list(np.arange(0, len(total_artists)))))
-
-        track_artists = pd.merge(temp, tracks_final, on='track_id', how='left')[['track_id', 'artist_id']]
-        ratingList = [1] * len(self.tracks_unique)
+        # generating matrix
+        ratinglist = [weight] * len(self.tracks_unique)
         row_indices = [x for x in range(0, len(self.tracks_unique))]
-        col_indices = list(map(lambda x: artist_dic[track_artists[track_artists['track_id'] == x].iloc[0]['artist_id']],
-                               self.tracks_unique))
-        A = sps.coo_matrix((ratingList, (row_indices, col_indices)))
+        col_indices = list(map(lambda x: artist_id_index_dic[track_id_artist_id_dic[x]], self.tracks_unique))
+        track_artist_matrix = sps.coo_matrix((ratinglist, (row_indices, col_indices)))
 
-        # cos = Cosine_Similarity(A.T.tocsr(), TopK=300)
-        # track_track = cos.compute_similarity()
-        # track_track = normalize(track_track, norm='l1', axis=1)
-        track_track = cosine_similarity(A.tocsr(), dense_output=False)
-        track_track = self.pruneTopK(track_track, topK=3000)
-        self.track_track += track_track * weight
+        return track_artist_matrix
 
-    def add_album(self, weight):
+    def generate_track_album_matrix(self, weight):
 
-        tracks_final = pd.read_csv("./Data/tracks_final.csv", sep='\t')
+        print("* generating track_album_matrix with weight {:.1f}".format(weight))
+
+        # reading data and perform prune
+        tracks_final = pd.read_csv("../data/tracks_final.csv", sep='\t')
         temp = pd.DataFrame({'track_id': self.tracks_unique})
-        temp = pd.merge(tracks_final, temp, on='track_id')
-        total_albums = sorted(list(set(temp.album)))
-        total_albums.remove('[]')
-        total_albums.remove('[None]')
-        legal_albums = set(total_albums)
-        row_number = len(self.tracks_unique)
-        col_number = len(total_albums)
+        track_album_df = pd.merge(temp, tracks_final[['track_id', 'album']], on='track_id')
+        albums = list(set(track_album_df.album))
+        track_id_album_dic = dict(zip(list(track_album_df.track_id), list(track_album_df.album)))
+        album_index_dic = dict(zip(albums, list(np.arange(0, len(albums)))))
 
-        A = sps.lil_matrix((row_number, col_number))
-        count = 0
-        for t in self.tracks_unique:
-            row_index = self.tracks_unique.index(t)
-            album = tracks_final[tracks_final['track_id'] == t].iloc[0]['album']
-            if album not in legal_albums:
-                count += 1
-                continue
-            col_index = total_albums.index(album)
-            A[row_index, col_index] = 1
-            count += 1
-        cos = Cosine_Similarity(A.T.tocsr(), TopK=300)
-        track_track = cos.compute_similarity()
-        track_track = normalize(track_track, norm='l1', axis=1)
-        self.track_track += track_track * weight
-
-    def vstack(self, artist_weight=2, album_weight=1, combine_weight=1, topk=100):
-
-        # Artist part
-        tracks_final = pd.read_csv("./Data/tracks_final.csv", sep='\t')
-        temp = pd.DataFrame({'track_id': self.tracks_unique})
-
-        total_artists = list(set(tracks_final.artist_id))
-        artist_dic = dict(zip(total_artists, list(np.arange(0, len(total_artists)))))
-
-        track_artists = pd.merge(temp, tracks_final, on='track_id', how='left')[['track_id', 'artist_id']]
-        ratingList = [artist_weight] * len(self.tracks_unique)
+        # generating matrix
+        ratinglist = [0 if ( track_id_album_dic[x] == '[]' or track_id_album_dic[x] == '[]') else weight for x in self.tracks_unique]
         row_indices = [x for x in range(0, len(self.tracks_unique))]
-        col_indices = list(map(lambda x: artist_dic[track_artists[track_artists['track_id'] == x].iloc[0]['artist_id']],
-                               self.tracks_unique))
-        artist_matrix = sps.coo_matrix((ratingList, (row_indices, col_indices)))
+        col_indices = list(map(lambda x: album_index_dic[track_id_album_dic[x]], self.tracks_unique))
+        track_album_matrix = sps.coo_matrix((ratinglist, (row_indices, col_indices)))
 
-        # album part
-        tracks_final = pd.read_csv("./Data/tracks_final.csv", sep='\t')
-        temp = pd.DataFrame({'track_id': self.tracks_unique})
-        temp = pd.merge(tracks_final, temp, on='track_id')
-        total_albums = sorted(list(set(temp.album)))
-        total_albums.remove('[]')
-        total_albums.remove('[None]')
-        legal_albums = set(total_albums)
-        row_number = len(self.tracks_unique)
-        col_number = len(total_albums)
+        return track_album_matrix
 
-        album_matrix = sps.lil_matrix((row_number, col_number))
-        for t in self.tracks_unique:
-            row_index = self.tracks_unique.index(t)
-            album = tracks_final[tracks_final['track_id'] == t].iloc[0]['album']
-            if album not in legal_albums:
-                continue
-            col_index = total_albums.index(album)
-            album_matrix[row_index, col_index] = album_weight
+    def generate_track_owner_matrix(self, weight):
 
-        # vstack
-        artist_album_matrix = sps.hstack([artist_matrix, album_matrix.tocoo()])
+        print("* generating playlist_owner_matrix with weight {:.1f}".format(weight))
+        # reading data and perform prune
+        playlist_final = pd.read_csv("../data/playlists_final.csv",sep='\t')
+        temp = pd.DataFrame({'playlist_id': self.playlist_unique})
+        playlist_owner = pd.merge(temp, playlist_final, on='playlist_id', how='left')[['playlist_id', 'owner']]
+        total_owners = list(set(playlist_owner.owner))
+        owner_dic = dict(zip(total_owners, list(np.arange(0, len(total_owners)))))
+        playlist_owner_dic = dict(zip(list(playlist_owner.playlist_id), list(playlist_owner.owner)))
 
-        # cos similarity
-        cos = Cosine_Similarity(artist_album_matrix.T.tocsr(), TopK=topk)
-        track_track = cos.compute_similarity()
-        track_track = normalize(track_track, norm='l1', axis=1)
+        # generating matrix
+        ratingList = [weight] * len(self.playlist_unique)
+        row_indices = [x for x in range(0, len(self.playlist_unique))]
+        col_indices = [owner_dic[playlist_owner_dic[x]] for x in self.playlist_unique]
+        playlist_owner_matrix = sps.coo_matrix((ratingList, (row_indices, col_indices)))
+        track_owner_matrix = self.urm.T.tocsr() * playlist_owner_matrix
 
-        # track_track = cosine_similarity(artist_album_matrix.tocsr(), dense_output=False)
-        # track_track = self.pruneTopK(track_track, topK=topk).T.tocsr()
-        self.track_track += track_track * combine_weight
+        return track_owner_matrix
+
 
     def add_tags(self, weight):
 
-        tracks_final = pd.read_csv("./Data/tracks_final.csv", sep='\t')
+        tracks_final = pd.read_csv("./data/tracks_final.csv", sep='\t')
         t1 = tracks_final[['track_id', 'tags']]
         t2 = pd.DataFrame(self.tracks_unique, columns=['track_id'])
         t1 = pd.merge(t1, t2, on='track_id')
@@ -190,9 +137,31 @@ class CollaborativeFilterItem(Recommender):
     def recommend(self, user_id, at=5):
 
         user_index = self.playlist_dic[user_id]
-        rec = self.playlist_track.getrow(user_index)
+        user = self.urm[user_index]
+        rec = np.dot(user, self.track_track)
         recommendingItems = np.asarray(rec.toarray()[0].argsort()[::-1])
         unseen_items_mask = np.in1d(recommendingItems, self.urm[user_index].indices,assume_unique=True, invert=True)
         unseen_items = recommendingItems[unseen_items_mask]
         recommended_items = unseen_items[0:at]
         return recommended_items
+
+if __name__ == "__main__":
+
+    from support.utility import read_data
+    from support.utility import train_test_split
+    import time
+
+    start = time.time()
+    print("reading data")
+    data = read_data(sample_frac=0.9)
+    print("train, test splitting")
+    (train, test) = train_test_split(data, 5)
+
+    print("training cfi")
+    cfi = CollaborativeFilterItem()
+    cfi.setup(train)
+    cfi.fit()
+    print("evaluating")
+    cfi.evaluate_result(train, test)
+
+    print("total time is {:.2f} minutes".format((time.time() - start) / 60))

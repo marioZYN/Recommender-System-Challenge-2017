@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
 import scipy.sparse as sps
-from utility import map_score
+import random
+from support.utility import map_score
 
 
 class Recommender(object):
@@ -46,8 +47,8 @@ class Recommender(object):
 
     def gen_result(self, path):
 
-        target_playlist = pd.read_csv('./Data/target_playlists.csv', sep='\t')
-        target_tracks = pd.read_csv('./Data/target_tracks.csv', sep='\t')
+        target_playlist = pd.read_csv('./data/target_playlists.csv', sep='\t')
+        target_tracks = pd.read_csv('./data/target_tracks.csv', sep='\t')
         result = target_playlist.copy().sort_values(['playlist_id'])
         pids = list(target_playlist.playlist_id)
         legal_items = set(target_tracks.track_id)
@@ -76,7 +77,8 @@ class Recommender(object):
 
         count = 0
         _map = 0.0
-        for pid in pids:
+        random.shuffle(pids)
+        for pid in pids[:10000]:
 
             recommended_items_index = self.recommend(pid, 100)
             recommended_items_id = list(map(lambda x: self.tracks_unique[x], recommended_items_index))
@@ -89,7 +91,7 @@ class Recommender(object):
 
             _map += map_score(recommended_items_id, relevant_items)
             count += 1
-            print("\r-- %d playlist completes with total %d" % (count, len(pids)), end='', flush=True)
+            print("\r%d playlist completes with total 10000" %count, end='', flush=True)
         print()
 
         _map /= count
@@ -111,4 +113,4 @@ class Recommender(object):
             matrix.rows[i] = r.tolist()
             print("\r%d completes" % i, end='', flush=True)
         print()
-        return matrix.tocsr()
+        return matrix.T.tocsr()

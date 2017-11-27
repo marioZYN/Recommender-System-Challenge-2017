@@ -1,8 +1,8 @@
 from algorithms.BPR import BFR
 from algorithms.CollaborativeFilterItem import  CollaborativeFilterItem
 from algorithms.Hybrid import Hybrid
-from utility import read_data
-from utility import train_test_split
+from support import read_data
+from support import train_test_split
 import time
 
 start = time.time()

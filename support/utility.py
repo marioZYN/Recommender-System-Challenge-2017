@@ -1,6 +1,7 @@
 import pandas as pd
 
 
+
 def compare_results(path1, path2):
     r1 = pd.read_csv(path1)
     r2 = pd.read_csv(path2)
@@ -55,5 +56,5 @@ def train_validate_test_split(total, threshold=10, select_number=10):
     return train, validate, test
 
 def read_data(sample_frac=1):
-    train_final = pd.read_csv("./Data/train_final.csv", sep='\t')
+    train_final = pd.read_csv("../data/train_final.csv", sep='\t')
     return train_final.sample(frac=sample_frac)

@@ -1,52 +1,28 @@
-from similarity_cython.SLIM_BPR.Cython.SLIM_BPR_Cython  import SLIM_BPR_Cython
-from similarity_cython.similarity_cython.CosineSim import Cosine_Similarity
 from algorithms.Recommender import Recommender
+from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import normalize
 import numpy as np
 import pandas as pd
 import scipy.sparse as sps
 
-class BFR(Recommender):
+
+class CollaborativeFilter(Recommender):
 
     def __init__(self):
 
         super().__init__()
-        self.track_track = None
         self.playlist_track = None
 
-    def fit(self,n_iteration, topK, learning_rate, lambda_i, lambda_j,combine_weight=[1,1], artist_weight=0, album_weight=0, artist_cfu_weight=0, vstack_weight=0):
 
-        #  track-track part
-        recommender = SLIM_BPR_Cython(self.urm.tocsr(), recompile_cython=False, positive_threshold=0, sparse_weights=True)
-        recommender.fit(epochs=n_iteration, validate_every_N_epochs=100, URM_test=None, topK=topK,
-                        batch_size=1, sgd_mode='sgd', learning_rate=learning_rate, lambda_i=lambda_i, lambda_j=lambda_j)
-        self.track_track = recommender.S
-        # self.track_track = normalize(self.track_track, norm='l1', axis=1)
-        if artist_weight != 0:
-            self.add_artist(artist_weight)
-        if album_weight !=0:
-            self.add_album(album_weight)
-        if vstack_weight != 0:
-            self.vstack(artist_weight=1, album_weight=1, combine_weight=1,topk=300)
-        # self.playlist_track = self.urm * self.track_track
-        # self.playlist_track = normalize(self.playlist_track, norm='l1', axis=1)
+    def fit(self):
 
+        print("-- caluclating item-item similarity matrix")
+        track_track = cosine_similarity(self.urm.T.tocsr(), dense_output=False)
+        print("-- caluclating user_user similarity matrix")
+        playlist_playlist = cosine_similarity(self.urm.tocsr(), dense_output=False)
+        print("-- generating prediction matrix")
+        self.playlist_track = self.urm.tocsr() * track_track.tocsc() + playlist_playlist.tocsr() * self.urm.tocsc()
 
-        # playlist-playlist part
-        recommender = SLIM_BPR_Cython(self.urm.T.tocsr(), recompile_cython=False, positive_threshold=0,
-                                      sparse_weights=True)
-        recommender.fit(epochs=n_iteration, validate_every_N_epochs=100, URM_test=None, topK=topK,
-                        batch_size=1, sgd_mode='sgd', learning_rate=learning_rate, lambda_i=lambda_i, lambda_j=lambda_j)
-        self.playlist_playlist = recommender.S
-        if artist_cfu_weight != 0:
-            self.add_artist_cfu(artist_cfu_weight)
-
-        # self.playlist_playlist = normalize(self.playlist_playlist, norm='l1', axis=1)
-        # # self.playlist_track = self.playlist_playlist.tocsr() * self.urm
-        # # self.playlist_track = normalize(self.playlist_track, norm='l1', axis=1)
-
-        self.playlist_track = self.urm * self.track_track * combine_weight[0] + self.playlist_playlist * self.urm * combine_weight[1]
-        self.playlist_track = normalize(self.playlist_track, norm='l1', axis=1)
 
     def add_artist(self, weight):
 
@@ -63,20 +39,21 @@ class BFR(Recommender):
                                self.tracks_unique))
         A = sps.coo_matrix((ratingList, (row_indices, col_indices)))
 
-        cos = Cosine_Similarity(A.T.tocsr(), TopK=500)
-        track_track = cos.compute_similarity()
-        track_track = normalize(track_track, norm='l1', axis=1)
+        # cos = Cosine_Similarity(A.T.tocsr(), TopK=300)
+        # track_track = cos.compute_similarity()
+        # track_track = normalize(track_track, norm='l1', axis=1)
+        track_track = cosine_similarity(A.tocsr(), dense_output=False)
+        track_track = self.pruneTopK(track_track, topK=3000)
         self.track_track += track_track * weight
 
     def add_album(self, weight):
 
-        print("adding album with weight %f ..." % weight)
         tracks_final = pd.read_csv("./data/tracks_final.csv", sep='\t')
         temp = pd.DataFrame({'track_id': self.tracks_unique})
         temp = pd.merge(tracks_final, temp, on='track_id')
         total_albums = sorted(list(set(temp.album)))
         total_albums.remove('[]')
-        # total_albums.remove('[None]')
+        total_albums.remove('[None]')
         legal_albums = set(total_albums)
         row_number = len(self.tracks_unique)
         col_number = len(total_albums)
@@ -88,28 +65,14 @@ class BFR(Recommender):
             album = tracks_final[tracks_final['track_id'] == t].iloc[0]['album']
             if album not in legal_albums:
                 count += 1
-                print("\r-- %d track completes with %d total" % (count, len(self.tracks_unique)), end='')
                 continue
             col_index = total_albums.index(album)
             A[row_index, col_index] = 1
             count += 1
-            print("\r-- %d track completes with %d total" % (count, len(self.tracks_unique)), end='')
-        print()
-
-        cos = Cosine_Similarity(A.T.tocsr(), TopK=100)
+        cos = Cosine_Similarity(A.T.tocsr(), TopK=300)
         track_track = cos.compute_similarity()
         track_track = normalize(track_track, norm='l1', axis=1)
         self.track_track += track_track * weight
-
-    def recommend(self, user_id, at=5):
-
-        user_index = self.playlist_dic[user_id]
-        rec = self.playlist_track.getrow(user_index)
-        recommendingItems = np.asarray(rec.toarray()[0].argsort()[::-1])
-        unseen_items_mask = np.in1d(recommendingItems, self.urm[user_index].indices,assume_unique=True, invert=True)
-        unseen_items = recommendingItems[unseen_items_mask]
-        recommended_items = unseen_items[0:at]
-        return recommended_items
 
     def vstack(self, artist_weight=2, album_weight=1, combine_weight=1, topk=100):
 
@@ -156,27 +119,10 @@ class BFR(Recommender):
         track_track = normalize(track_track, norm='l1', axis=1)
 
         # track_track = cosine_similarity(artist_album_matrix.tocsr(), dense_output=False)
-        # track_track.setdiag(0)
-        # track_track.eliminate_zeros()
+        # track_track = self.pruneTopK(track_track, topK=topk).T.tocsr()
         self.track_track += track_track * combine_weight
 
-    def add_artist_cfu(self, weight):
-
-        tracks_final = pd.read_csv("./data/tracks_final.csv", sep='\t')
-        temp = pd.DataFrame({'track_id': self.tracks_unique})
-        track_artists = pd.merge(temp, tracks_final, on='track_id', how='left')[['track_id', 'artist_id']]
-        ratingList = [1] * len(self.tracks_unique)
-        row_indices = [x for x in range(0, len(self.tracks_unique))]
-        col_indices = list(
-            map(lambda x: track_artists[track_artists['track_id'] == x].iloc[0]['artist_id'], self.tracks_unique))
-        track_artist = sps.coo_matrix((ratingList, (row_indices, col_indices)))
-        playlist_artist = self.urm * track_artist.tocsr()
-        cos = Cosine_Similarity(playlist_artist.T.tocsr(), TopK=100)
-        playlist_playlist = cos.compute_similarity()
-        playlist_playlist = normalize(playlist_playlist, norm='l1', axis=1)
-        self.playlist_playlist += playlist_playlist * weight
-
-    def gen_tags(self, weight):
+    def add_tags(self, weight):
 
         tracks_final = pd.read_csv("./data/tracks_final.csv", sep='\t')
         t1 = tracks_final[['track_id', 'tags']]
@@ -221,4 +167,36 @@ class BFR(Recommender):
             print("\r-- %d tracks completes with %d total" % (count, len(self.tracks_unique)), end='')
         print()
 
-        return A.T.tocsr()
+        self.tags = A.tocsr()
+
+
+    def recommend(self, user_id, at=5):
+
+        user_index = self.playlist_dic[user_id]
+        rec = self.playlist_track.getrow(user_index)
+        recommendingItems = np.asarray(rec.toarray()[0].argsort()[::-1])
+        unseen_items_mask = np.in1d(recommendingItems, self.urm[user_index].indices,assume_unique=True, invert=True)
+        unseen_items = recommendingItems[unseen_items_mask]
+        recommended_items = unseen_items[0:at]
+        return recommended_items
+
+
+if __name__ == '__main__':
+
+    from support import read_data
+    from support import train_test_split
+    import time
+
+    start = time.time()
+    print("reading data")
+    data = read_data(sample_frac=0.9)
+    print("train, test splitting")
+    (train, test) = train_test_split(data, 5)
+
+    print("training cfi")
+    cf = CollaborativeFilter()
+    cf.setup(train)
+    cf.fit()
+    cf.evaluate_result(train, test)
+
+    print("total time is {:.2f} minutes".format((time.time() - start) / 60))

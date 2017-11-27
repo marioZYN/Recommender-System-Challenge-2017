@@ -245,13 +245,13 @@ class SLIM_BPR_Python(BPR_Sampling, Similarity_Matrix_Recommender, Recommender):
                           'topK_similarity': self.topK,
                           'epoch': currentEpoch}
 
-        print("Test case: {}\nResults {}\n".format(current_config, results_run))
+        print("Test case: {}\nresults {}\n".format(current_config, results_run))
         # print("Weights: {}\n".format(str(list(self.weights))))
 
         sys.stdout.flush()
 
         if (logFile != None):
-            logFile.write("Test case: {}, Results {}\n".format(current_config, results_run))
+            logFile.write("Test case: {}, results {}\n".format(current_config, results_run))
             # logFile.write("Weights: {}\n".format(str(list(self.weights))))
             logFile.flush()
 

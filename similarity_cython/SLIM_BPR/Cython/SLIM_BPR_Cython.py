@@ -151,10 +151,10 @@ class SLIM_BPR_Cython(SLIM_BPR_Python):
                           'epoch': currentEpoch,
                           'sgd_mode': self.sgd_mode}
 
-        print("Test case: {}\nResults {}\n".format(current_config, results_run))
+        print("Test case: {}\nresults {}\n".format(current_config, results_run))
 
         sys.stdout.flush()
 
         if (logFile != None):
-            logFile.write("Test case: {}, Results {}\n".format(current_config, results_run))
+            logFile.write("Test case: {}, results {}\n".format(current_config, results_run))
             logFile.flush()

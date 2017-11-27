@@ -1,18 +1,18 @@
 from algorithms.CollaborativeFilterUser import CollaborativeFilterUser
-from utility import read_data
-from utility import train_test_split
+from support import read_data
+from support import train_test_split
 import time
 
 start = time.time()
-print("reading data...")
+print("reading data")
 data = read_data(sample_frac=0.9)
-print("train, test splitting...")
+print("train, test splitting")
 (train, test) = train_test_split(data, 5)
 
-print("training content-based rec system ")
+print("training cfu")
 cfu = CollaborativeFilterUser()
 cfu.setup(train)
-cfu.fit(artist_weight=1, album_weight=0, owner_weight=1)
+cfu.fit()
 cfu.evaluate_result(train, test)
 
 
