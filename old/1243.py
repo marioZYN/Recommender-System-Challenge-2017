@@ -1,14 +1,14 @@
 from algorithms.BPR import BFR
 from algorithms.CollaborativeFilterItem import  CollaborativeFilterItem
 from algorithms.Hybrid import Hybrid
-from utility import read_data
+from support import read_data
 import pandas as pd
-from utility import train_test_split
+from support import train_test_split
 import time
 
 start = time.time()
 print("reading data...")
-train_final = pd.read_csv("./Data/train_final.csv", sep='\t')
+train_final = pd.read_csv("./data/train_final.csv", sep='\t')
 train = train_final
 
 print("training BFR system ")
@@ -26,6 +26,6 @@ hybrid = Hybrid()
 hybrid.setup(train)
 hybrid.fit(recommender_objects=[cfi,bfr],weights=[1,1])
 print("generating...")
-hybrid.gen_result("./Results/hybrid_v3.csv")
+hybrid.gen_result("./results/hybrid_v3.csv")
 
 print("total time is {:.2f} minutes".format((time.time()-start)/60))
