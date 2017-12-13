@@ -6,7 +6,7 @@ import pandas as pd
 import scipy.sparse as sps
 import numpy as np
 
-class ContentBased(Recommender):
+class ContentBasedUser(Recommender):
 
     def __init__(self):
 
@@ -14,22 +14,22 @@ class ContentBased(Recommender):
         self.track_track = None
         self.playlist_track = None
 
-    def fit(self, artist=0, album=0, tag=0, owner=0, title=0, history =0):
+    def fit(self, artist=0, album=0, tag=0, owner=0, title=0, history=0):
 
         print("-- creating attributes")
         attributes = []
         if artist != 0:
-            attributes.append(self.generate_track_artist_matrix(artist))
+            attributes.append(self.generate_playlist_artist_matrix(artist))
         if album != 0:
-            attributes.append(self.generate_track_album_matrix(album))
+            attributes.append(self.generate_playlist_album_matrix(album))
         if tag != 0:
-            attributes.append(self.generate_track_tag_matrix(tag))
+            attributes.append(self.generate_playlist_tag_matrix(tag))
         if owner != 0:
-            attributes.append(self.generate_track_owner_matrix(owner))
+            attributes.append(self.generate_playlist_owner_matrix(owner))
         if title != 0:
-            attributes.append(self.generate_track_title_matrix(title))
+            attributes.append(self.generate_playlist_title_matrix(title))
         if history != 0:
-            attributes.append(self.urm.T * history)
+            attributes.append(self.urm * history)
 
         print("-- combining attributes")
         result = attributes[0]
@@ -38,13 +38,13 @@ class ContentBased(Recommender):
 
         print("-- generating cosine similarity matrix")
         cos = Cosine_Similarity(result.T.tocsr(), TopK=2000)
-        self.track_track = cos.compute_similarity()
-        self.track_track = normalize(self.track_track, norm='l2', axis=1)
+        self.playlist_playlist = cos.compute_similarity().T
+        self.playlist_playlist = normalize(self.playlist_playlist.tocsr(), norm='l2', axis=1)
 
         print("-- generating prediction matrix")
-        self.playlist_track = self.urm.tocsr() * self.track_track.tocsr()
+        self.playlist_track = self.playlist_playlist.tocsr() * self.urm.tocsr()
 
-    def generate_track_artist_matrix(self, weight):
+    def generate_playlist_artist_matrix(self, weight):
 
         print("* generating track_artist_matrix with weight {:.1f}".format(weight))
 
@@ -61,10 +61,11 @@ class ContentBased(Recommender):
         row_indices = [x for x in range(0, len(self.tracks_unique))]
         col_indices = list(map(lambda x: artist_id_index_dic[track_id_artist_id_dic[x]], self.tracks_unique))
         track_artist_matrix = sps.coo_matrix((ratinglist, (row_indices, col_indices)))
+        playlist_artist_matrix = self.urm.tocsr() * track_artist_matrix
 
-        return track_artist_matrix
+        return playlist_artist_matrix
 
-    def generate_track_album_matrix(self, weight):
+    def generate_playlist_album_matrix(self, weight):
 
         print("* generating track_album_matrix with weight {:.1f}".format(weight))
 
@@ -81,12 +82,13 @@ class ContentBased(Recommender):
         row_indices = [x for x in range(0, len(self.tracks_unique))]
         col_indices = list(map(lambda x: album_index_dic[track_id_album_dic[x]], self.tracks_unique))
         track_album_matrix = sps.coo_matrix((ratinglist, (row_indices, col_indices)))
+        playlist_album_matrix = self.urm.tocsr() * track_album_matrix
 
-        return track_album_matrix
+        return playlist_album_matrix
 
-    def generate_track_tag_matrix(self, weight):
+    def generate_playlist_tag_matrix(self, weight):
 
-        print("* generating track_tag_matrix with weight {:.1f}".format(weight))
+        print("* generating track_title_matrix with weight {:.1f}".format(weight))
 
         # preparing data
         playlist_final = pd.read_csv("../data/tracks_final.csv", sep='\t')
@@ -115,10 +117,11 @@ class ContentBased(Recommender):
         col_indices = [tag_index_dic[x] for x in tag_name_list]
         track_tag_matrix = sps.coo_matrix((ratinglist, (row_indices, col_indices)))
         track_tag_matrix.eliminate_zeros()
+        playlist_tag_matrix = self.urm.tocsr() * track_tag_matrix
 
-        return track_tag_matrix
+        return playlist_tag_matrix
 
-    def generate_track_owner_matrix(self, weight):
+    def generate_playlist_owner_matrix(self, weight):
 
         print("* generating playlist_owner_matrix with weight {:.1f}".format(weight))
         # reading data and perform prune
@@ -135,11 +138,10 @@ class ContentBased(Recommender):
         row_indices = [x for x in range(0, len(self.playlist_unique))]
         col_indices = [owner_dic[playlist_owner_dic[x]] for x in self.playlist_unique]
         playlist_owner_matrix = sps.coo_matrix((ratingList, (row_indices, col_indices)))
-        track_owner_matrix = self.urm.T.tocsr() * playlist_owner_matrix
 
-        return track_owner_matrix
+        return playlist_owner_matrix
 
-    def generate_track_title_matrix(self, weight):
+    def generate_playlist_title_matrix(self, weight):
 
         print("* generating playlist_title_matrix with weight {:.1f}".format(weight))
 
@@ -170,21 +172,8 @@ class ContentBased(Recommender):
         col_indices = [title_index_dic[x] for x in title_name_list]
         playlist_title_matrix = sps.coo_matrix((ratinglist, (row_indices, col_indices)))
         playlist_title_matrix.eliminate_zeros()
-        track_title_matrix = self.urm.T.tocsr() * playlist_title_matrix
 
-        return track_title_matrix
-
-
-
-    # def recommend(self, user_id, at=5):
-    #
-    #     user_index = self.playlist_dic[user_id]
-    #     rec = self.playlist_track.tocsr().getrow(user_index)
-    #     recommendingItems = np.asarray(rec.toarray()[0].argsort()[::-1])
-    #     unseen_items_mask = np.in1d(recommendingItems, self.urm[user_index].indices,assume_unique=True, invert=True)
-    #     unseen_items = recommendingItems[unseen_items_mask]
-    #     recommended_items = unseen_items[0:at]
-    #     return recommended_items
+        return playlist_title_matrix
 
 
 if __name__ == "__main__":
@@ -200,16 +189,13 @@ if __name__ == "__main__":
     print("train, test splitting")
     (train, test1, test2) = train_validate_test_split(data)
 
-    print("training cb item")
-    cb_item = ContentBased()
-    cb_item.setup(train)
-    cb_item.fit(artist=15, album=15, owner=2, tag=1, history=5)
-
-    # cb_item.gen_result('../results/cb_item_v6.csv')
+    print("training cb")
+    cb = ContentBasedUser()
+    cb.setup(train)
+    cb.fit(artist=1)
     print("evaluating test1")
-    cb_item.evaluate_result(train, test1)
-
-    print("evaluating test2")
-    cb_item.evaluate_result(train, test2)
+    cb.evaluate_result(train, test1)
+    # print("evaluating test2")
+    # cb.evaluate_result(train, test2)
 
     print("total time is {:.2f} minutes".format((time.time() - start) / 60))

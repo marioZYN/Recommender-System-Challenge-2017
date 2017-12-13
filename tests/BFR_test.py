@@ -1,6 +1,6 @@
-from algorithms.BPR import BFR
-from support import read_data
-from support import train_test_split
+from algorithms.BPR import BPR
+from support.utility import read_data
+from support.utility import train_test_split
 import time
 
 start = time.time()
@@ -10,7 +10,7 @@ print("train, test splitting...")
 (train, test) = train_test_split(data, 5)
 
 print("training content-based rec system ")
-bfr = BFR()
+bfr = BPR()
 bfr.setup(train)
 bfr.fit(n_iteration=15, topK=300, learning_rate=1e-3, lambda_i=0.0001, lambda_j=0.0001, combine_weight=[1,1], artist_weight=0, album_weight=0, artist_cfu_weight=1, vstack_weight=1)
 bfr.evaluate_result(train, test)

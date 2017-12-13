@@ -6,6 +6,7 @@ from support.utility import map_score
 
 
 class Recommender(object):
+
     """Abstract recommender class"""
 
     def __init__(self):
@@ -16,7 +17,9 @@ class Recommender(object):
         self.tracks_dic = None
         self.playlist_index = None
         self.tracks_index = None
+        self.playlist_track = None
         self.urm = None
+
 
     def setup(self, train):
 
@@ -32,6 +35,7 @@ class Recommender(object):
         rating_list = [1] * train_sorted.shape[0]
         urm = sps.coo_matrix((rating_list, (playlist_index, tracks_index)))
 
+
         self.playlist_unique = playlist_unique
         self.tracks_unique = tracks_unique
         self.playlist_dic = playlist_dic
@@ -43,14 +47,21 @@ class Recommender(object):
 
     def recommend(self, user_id, at=5):
 
-        return []
+        user_index = self.playlist_dic[user_id]
+        rec = self.playlist_track.tocsr().getrow(user_index)
+        recommendingItems = np.asarray(rec.toarray()[0].argsort()[::-1])
+        unseen_items_mask = np.in1d(recommendingItems, self.urm[user_index].indices, assume_unique=True, invert=True)
+        unseen_items_index = recommendingItems[unseen_items_mask]
+        recommended_items = unseen_items_index[0:at]
+        return recommended_items
 
     def gen_result(self, path):
 
-        target_playlist = pd.read_csv('./data/target_playlists.csv', sep='\t')
-        target_tracks = pd.read_csv('./data/target_tracks.csv', sep='\t')
+        target_playlist = pd.read_csv('../data/target_playlists.csv', sep='\t')
+        target_tracks = pd.read_csv('../data/target_tracks.csv', sep='\t')
         result = target_playlist.copy().sort_values(['playlist_id'])
-        pids = list(target_playlist.playlist_id)
+        result = result.reset_index(drop=True)
+        pids = list(result.playlist_id)
         legal_items = set(target_tracks.track_id)
         count = 0
         for pid in pids:
@@ -77,40 +88,19 @@ class Recommender(object):
 
         count = 0
         _map = 0.0
-        random.shuffle(pids)
-        for pid in pids[:10000]:
+        for pid in pids:
 
-            recommended_items_index = self.recommend(pid, 100)
+            recommended_items_index = self.recommend(pid, 200)
             recommended_items_id = list(map(lambda x: self.tracks_unique[x], recommended_items_index))
             recommended_items_id = list(filter(lambda x: x in legal_items, recommended_items_id))[:5]
-            if len(recommended_items_id) != 5:
-                print("Not enough!")
-                return
 
             relevant_items = list(test[test['playlist_id'] == pid].track_id)
 
             _map += map_score(recommended_items_id, relevant_items)
             count += 1
-            print("\r%d playlist completes with total 10000" %count, end='', flush=True)
+            print("\r%d playlist completes with total %d" %(count, len(pids)), end='', flush=True)
         print()
 
         _map /= count
         print()
         print("MAP = %f" % _map)
-
-    def max_n(self, row_data, row_indices, n):
-        i = row_data.argsort()[-n:]
-        top_values = row_data[i]
-        top_indices = row_indices[i]
-        return top_values, top_indices
-
-    def pruneTopK(self, matrix, topK):
-        matrix.setdiag(0)
-        matrix = matrix.tolil()
-        for i in range(0, matrix.shape[0]):
-            d, r, = self.max_n(np.array(matrix.data[i]), np.array(matrix.rows[i]), topK)
-            matrix.data[i] = d.tolist()
-            matrix.rows[i] = r.tolist()
-            print("\r%d completes" % i, end='', flush=True)
-        print()
-        return matrix.T.tocsr()

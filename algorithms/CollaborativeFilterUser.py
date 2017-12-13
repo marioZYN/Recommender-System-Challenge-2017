@@ -1,8 +1,10 @@
 from algorithms.Recommender import Recommender
-from sklearn.metrics.pairwise import cosine_similarity
+from similarity_cython.CosineSim import Cosine_Similarity
+from sklearn.preprocessing import normalize
 import numpy as np
 import pandas as pd
 import scipy.sparse as sps
+from support.utility import similarity_matrix_topk
 
 class CollaborativeFilterUser(Recommender):
 
@@ -15,13 +17,9 @@ class CollaborativeFilterUser(Recommender):
 
     def fit(self):
 
-        print("-- calculating user-user similarity matrix")
-        playlist_playlist = cosine_similarity(self.urm, dense_output=False)
-        print("-- calculating user-user similarity from titles")
-        playlist_title_matrix = self.generate_playlist_title_matrix(1)
-        playlist_playlist_titles = cosine_similarity(playlist_title_matrix, dense_output=False)
-        print("-- adding cfu and content based")
-        self.playlist_playlist = playlist_playlist - playlist_playlist_titles * 0.4
+        cos = Cosine_Similarity(self.urm.T, TopK=2000)
+        self.playlist_playlist = cos.compute_similarity()
+        self.playlist_playlist = normalize(self.playlist_playlist, norm='l2', axis=1)
         print("-- generating prediction matrix")
         self.playlist_track = self.playlist_playlist.tocsr() * self.urm.tocsc()
 
@@ -79,63 +77,58 @@ class CollaborativeFilterUser(Recommender):
 
         return playlist_title_matrix
 
-    def add_artist(self, weight):
+    def generate_playlist_artist_matrix(self, weight):
 
-        tracks_final = pd.read_csv("./data/tracks_final.csv", sep='\t')
+        print("* generating playlist_artist_matrix with weight {:.1f}".format(weight))
+
+        # reading data and perform prune
+
+        tracks_final = pd.read_csv("../data/tracks_final.csv", sep='\t')
         temp = pd.DataFrame({'track_id': self.tracks_unique})
-        track_artists = pd.merge(temp, tracks_final, on='track_id', how='left')[['track_id', 'artist_id']]
-        ratingList = [1] * len(self.tracks_unique)
+        track_artist_df = pd.merge(temp, tracks_final[['track_id', 'artist_id']], on='track_id')
+        artists = list(set(track_artist_df.artist_id))
+        track_id_artist_id_dic = dict(zip(list(track_artist_df.track_id), list(track_artist_df.artist_id)))
+        artist_id_index_dic = dict(zip(artists, list(np.arange(0, len(artists)))))
+
+        # generating track_aritst_matrix
+
+        ratinglist = [weight] * len(self.tracks_unique)
         row_indices = [x for x in range(0, len(self.tracks_unique))]
-        col_indices = list(
-            map(lambda x: track_artists[track_artists['track_id'] == x].iloc[0]['artist_id'], self.tracks_unique))
-        track_artist = sps.coo_matrix((ratingList, (row_indices, col_indices)))
-        playlist_artist = self.urm * track_artist.tocsr()
-        cos = Cosine_Similarity(playlist_artist.T.tocsr(), TopK=100)
-        playlist_playlist = cos.compute_similarity()
-        playlist_playlist = normalize(playlist_playlist, norm='l1', axis=1)
-        self.playlist_playlist += playlist_playlist * weight
+        col_indices = list(map(lambda x: artist_id_index_dic[track_id_artist_id_dic[x]], self.tracks_unique))
+        track_artist_matrix = sps.coo_matrix((ratinglist, (row_indices, col_indices)))
 
-    def add_album(self, weight):
+        # generating playlist_artist_matrix
 
-        print("adding album with weight %f ..." % weight)
-        tracks_final = pd.read_csv("./data/tracks_final.csv", sep='\t')
-        total_albums = sorted(list(set(tracks_final.album)))
-        total_albums.remove('[]')
-        # total_albums.remove('[None]')
-        legal_albums = set(total_albums)
-        row_number = len(self.tracks_unique)
-        col_number = len(total_albums)
+        playlist_artist_matrix = self.urm.tocsr() * track_artist_matrix.tocsc()
 
-        A = sps.lil_matrix((row_number, col_number))
-        count = 0
-        for t in self.tracks_unique:
-            row_index = self.tracks_unique.index(t)
-            album = tracks_final[tracks_final['track_id'] == t].iloc[0]['album']
-            if album not in legal_albums:
-                count += 1
-                print("\r-- %d track completes with %d total" % (count, len(self.tracks_unique)), end='')
-                continue
-            col_index = total_albums.index(album)
-            A[row_index, col_index] = 1
-            count += 1
-            print("\r-- %d track completes with %d total" % (count, len(self.tracks_unique)), end='')
-        print()
+        return playlist_artist_matrix
 
-        playlist_album = self.urm * A.tocsr()
-        cos = Cosine_Similarity(playlist_album.T.tocsr(), TopK=500)
-        playlist_playlist = cos.compute_similarity()
-        playlist_playlist = normalize(playlist_playlist, norm='l1', axis=1)
-        self.playlist_playlist += playlist_playlist * weight
+    def generate_playlist_album_matrix(self, weight):
 
-    def recommend(self, user_id, at=5):
+        print("* generating track_album_matrix with weight {:.1f}".format(weight))
 
-        user_index = self.playlist_dic[user_id]
-        rec = self.playlist_track.getrow(user_index)
-        recommendingItems = np.asarray(rec.toarray()[0].argsort()[::-1])
-        unseen_items_mask = np.in1d(recommendingItems, self.urm[user_index].indices, assume_unique=True, invert=True)
-        unseen_items = recommendingItems[unseen_items_mask]
-        recommended_items = unseen_items[0:at]
-        return recommended_items
+        # reading data and perform prune
+
+        tracks_final = pd.read_csv("../data/tracks_final.csv", sep='\t')
+        temp = pd.DataFrame({'track_id': self.tracks_unique})
+        track_album_df = pd.merge(temp, tracks_final[['track_id', 'album']], on='track_id')
+        albums = list(set(track_album_df.album))
+        track_id_album_dic = dict(zip(list(track_album_df.track_id), list(track_album_df.album)))
+        album_index_dic = dict(zip(albums, list(np.arange(0, len(albums)))))
+
+        # generating matrix
+
+        ratinglist = [0 if ( track_id_album_dic[x] == '[]' or track_id_album_dic[x] == '[]') else weight for x in self.tracks_unique]
+        row_indices = [x for x in range(0, len(self.tracks_unique))]
+        col_indices = list(map(lambda x: album_index_dic[track_id_album_dic[x]], self.tracks_unique))
+        track_album_matrix = sps.coo_matrix((ratinglist, (row_indices, col_indices)))
+
+        # generating playlist_album_matrix
+
+        playlist_album_matrix = self.urm.tocsr() * track_album_matrix.tocsc()
+
+        return playlist_album_matrix
+
 
 
 if __name__ == '__main__':

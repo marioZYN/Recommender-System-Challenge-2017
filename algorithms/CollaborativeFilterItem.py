@@ -1,7 +1,8 @@
 from algorithms.Recommender import Recommender
 from sklearn.metrics.pairwise import cosine_similarity
-from similarity_cython.similarity_cython.CosineSim import Cosine_Similarity
+from similarity_cython.CosineSim import Cosine_Similarity
 from sklearn.preprocessing import normalize
+from support.utility import similarity_matrix_topk
 import numpy as np
 import pandas as pd
 import scipy.sparse as sps
@@ -17,13 +18,14 @@ class CollaborativeFilterItem(Recommender):
 
     def fit(self):
 
-        print("-- generating profile")
-        track_artist_matrix = self.generate_track_artist_matrix(1)
-        track_album_matrix = self.generate_track_album_matrix(1)
-        track_attribute_matrix = sps.hstack([track_artist_matrix.tocoo(), track_album_matrix.tocoo()])
+
         print("-- caluclating item-item simislarity matrix")
-        self.track_track = cosine_similarity(self.urm.T.tocsr(), dense_output=False)
-        self.track_track += cosine_similarity(track_attribute_matrix.tocsr(), dense_output=False)
+        cos = Cosine_Similarity(self.urm, TopK=1000)
+        self.track_track = cos.compute_similarity()
+        self.track_track = normalize(self.track_track, norm='l2', axis=1)
+
+        print("-- generating prediction matrix")
+        self.playlist_track = self.urm.tocsr() * self.track_track.tocsc()
 
     def generate_track_artist_matrix(self, weight):
 
@@ -86,82 +88,28 @@ class CollaborativeFilterItem(Recommender):
         return track_owner_matrix
 
 
-    def add_tags(self, weight):
 
-        tracks_final = pd.read_csv("./data/tracks_final.csv", sep='\t')
-        t1 = tracks_final[['track_id', 'tags']]
-        t2 = pd.DataFrame(self.tracks_unique, columns=['track_id'])
-        t1 = pd.merge(t1, t2, on='track_id')
-        t1['tags'] = t1['tags'].str.replace(r'(\[|\])', '')
-
-        legal_tags = set()
-        count = 0
-        print("-- calculating total tags...")
-        for i in range(0, t1.shape[0]):
-            count += 1
-            print('\r-- %d tracks completes with total %d' % (count, t1.shape[0]), end='')
-            temp = t1.iloc[i].tags.replace(' ', '').split(',')
-            if not temp[0]:
-                continue
-            current_tags = set(map(int, temp))
-            legal_tags = legal_tags | current_tags
-        print()
-
-        total_tags = sorted(list(legal_tags))
-
-        row_number = len(self.tracks_unique)
-        col_number = len(total_tags)
-        A = sps.lil_matrix((row_number, col_number))
-
-        print("-- forming matrix...")
-        count = 0
-        for t in self.tracks_unique:
-            row_index = self.tracks_unique.index(t)
-            tags = t1[t1['track_id'] == t].iloc[0]['tags']
-            tags = tags.replace(' ', '').split(',')
-            if not tags[0]:
-                count += 1
-                print("\r-- %d tracks completes with %d total" % (count, len(self.tracks_unique)), end='')
-                continue
-            tags = list(map(int, tags))
-            for tag in tags:
-                col_index = total_tags.index(tag)
-                A[row_index, col_index] = 1
-            count += 1
-            print("\r-- %d tracks completes with %d total" % (count, len(self.tracks_unique)), end='')
-        print()
-
-        self.tags = A.tocsr()
-
-
-    def recommend(self, user_id, at=5):
-
-        user_index = self.playlist_dic[user_id]
-        user = self.urm[user_index]
-        rec = np.dot(user, self.track_track)
-        recommendingItems = np.asarray(rec.toarray()[0].argsort()[::-1])
-        unseen_items_mask = np.in1d(recommendingItems, self.urm[user_index].indices,assume_unique=True, invert=True)
-        unseen_items = recommendingItems[unseen_items_mask]
-        recommended_items = unseen_items[0:at]
-        return recommended_items
 
 if __name__ == "__main__":
 
     from support.utility import read_data
     from support.utility import train_test_split
+    from support.utility import train_validate_test_split
     import time
 
     start = time.time()
     print("reading data")
     data = read_data(sample_frac=0.9)
     print("train, test splitting")
-    (train, test) = train_test_split(data, 5)
+    (train, test1, test2) = train_validate_test_split(data)
 
     print("training cfi")
     cfi = CollaborativeFilterItem()
     cfi.setup(train)
     cfi.fit()
-    print("evaluating")
-    cfi.evaluate_result(train, test)
+    print("evaluating test1")
+    cfi.evaluate_result(train, test1)
+    print("evaluating test2")
+    cfi.evaluate_result(train, test2)
 
     print("total time is {:.2f} minutes".format((time.time() - start) / 60))
