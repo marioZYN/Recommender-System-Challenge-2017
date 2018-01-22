@@ -1,0 +1,39 @@
+2017-11-24
+
+pure plain cfi -> 0.053
+pure plain cfu -> 0.058
+pure cfi + pure cfu -> 0.068237
+cfi decorates with artist[1] -> 0.072714
+cfi decorates with artist[1.2] -> 0.072484
+cfi decorates with artist[2] -> 0.064631
+cfi decorates with artist[0.5] -> 0.062336
+cfi decorates with artist[50] -> 0.050042
+cfi decorates with album[1] -> 0.072701
+cfi decorates with album[2] -> 0.081749
+cfi decorates with album[3] -> 0.078365
+cfi decorates with artist[1] album[2] -> 0.084948
+cfi decorates with artist[1] album[1.5] -> 0.084395
+cfi decorates with artist[1] album[1] -> 0.082637
+cfi decorates with artist[1] album[3] -> 0.083205
+cfi decorates with artist[2] album[3] -> 0.079159
+
+cfi seperate track_track similarity artist[1] album[1.5] -> 0.086040
+cfi seperate track_track similarity artist[1] album[2] -> 0.086502
+cfi seperate track_track similarity artist[1] album[1] -> 0.083040
+cfi seperate track_track similarity artist[1] album[2] with combine weight 2 -> 0.083764
+cfi seperate track_track similarity artist[1] album[2] with combine weight 0.5 -> 0.087292
+cfi seperate track_track similarity artist[1] album[1] with combine weight 0.5 -> 0.085432
+cfi seperate track_track similarity artist[1] album[3] with combine weight 0.5 -> 0.085642
+cfi seperate track_track similarity artist[1] album[3] with combine weight 0.3 -> 0.084157
+
+
+cfu decorates with owner[1] -> 0.058730
+cfu decorates with owner[2] -> 0.049263
+cfu decorates with owner[10] -> 0.027843
+cfu decorates with owner[0.5] -> 0.058556
+cfu decorates with titles[1] -> 0.047401
+
+item 0.077
+user 0.059473
+cb user(1) item(1) -> 0.069
+hybrid item, cb -> 0.084

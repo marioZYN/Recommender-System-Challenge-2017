@@ -1,0 +1,41 @@
+cfu.fit(artist_weight=0, album_weight=1) -> MAP = 0.059433
+cfu.fit(artist_weight=0, album_weight=0) -> MAP = 0.058045
+cfu.fit(artist_weight=1, album_weight-0) -> MAP = 0.061438
+
+bfr.fit(n_iteration=30, topK=500, learning_rate=1e-4, lambda_i=0.0002, lambda_j=0.0002, combine_weight=[1,1], artist_weight=1, album_weight=0.2, artist_cfu_weight=1) -> MAP = 0.081054
+
+bfr.fit(n_iteration=10, topK=200, learning_rate=1e-4, lambda_i=0.0002, lambda_j=0.0002, combine_weight=[1,1], artist_weight=1.2, album_weight=0.2, artist_cfu_weight=0) -> MAP = 0.084977
+
+bfr.fit(n_iteration=10, topK=200, learning_rate=1e-4, lambda_i=0.0002, lambda_j=0.0002, combine_weight=[1.5,1], artist_weight=1, album_weight=0, artist_cfu_weight=0) -> MAP = 0.079303
+
+bfr.fit(n_iteration=10, topK=200, learning_rate=1e-4, lambda_i=0.0002, lambda_j=0.0002, combine_weight=[1,1], artist_weight=1, album_weight=0, artist_cfu_weight=0) -> MAP=0.80097
+
+
+**
+bfr.fit(n_iteration=25, topK=200, learning_rate=1e-3, lambda_i=0.0001, lambda_j=0.0001, combine_weight=[1,1], artist_weight=1, album_weight=0.3, artist_cfu_weight=0)
+-> MAP = 0.090012
+cfi.fit(artist_weight=1, album_weight=0.3)
+-> MAP = 0.086986
+hybrid.fit(recommender_objects=[cfi,bfr],weights=[1,3])
+-> MAP = 0.091399
+**
+
+cfu.fit(artist_weight=0, album_weight=0, owner_weight=1) -> MAP=0.052821
+
+bfr.fit(n_iteration=25, topK=200, learning_rate=1e-3, lambda_i=0.0001, lambda_j=0.0001, combine_weight=[1,1], artist_weight=1, album_weight=0.3, artist_cfu_weight=0)  -> MAP = 0.090889
+
+bfr.fit(n_iteration=25, topK=200, learning_rate=1e-3, lambda_i=0.0001, lambda_j=0.0001, combine_weight=[1,1], artist_weight=1, album_weight=1, artist_cfu_weight=1) -> MAP = 0.088262
+
+**
+bfr.fit(n_iteration=15, topK=200, learning_rate=1e-3, lambda_i=0.0001, lambda_j=0.0001, combine_weight=[1,1], artist_weight=1, album_weight=0.3, artist_cfu_weight=0)
+-> MAP = 0.092574
+cfi.fit(artist_weight=0.5, album_weight=0.1)
+-> MAP = 0.089952
+hybrid.fit(recommender_objects=[cfi,bfr],weights=[1,1])
+-> MAP = 0.093450
+**
+
+vstack(self, artist_weight=2, album_weight=1, combine_weight=1)
+-> MAP = 0.088272
+
+
